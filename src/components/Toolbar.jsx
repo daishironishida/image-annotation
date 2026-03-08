@@ -53,7 +53,7 @@ export default function Toolbar({
   strokeColor, onStrokeColorChange,
   fillColor, fillEnabled, onFillColorChange, onFillEnabledChange,
   strokeWidth, onStrokeWidthChange,
-  fontSize, onFontSizeChange, isTextSelected,
+  fontSize, onFontSizeChange, isTextSelected, isObjectSelected,
   onUndo, onRedo, canUndo, canRedo,
   onDownload, onClose,
   pageNum, totalPages, onPageChange,
@@ -99,7 +99,7 @@ export default function Toolbar({
       <div className="tb-sep" />
 
       {/* Colors & stroke */}
-      {(
+      {(activeTool !== 'select' || isObjectSelected) && (
         <div className="tb-group">
           {/* Stroke color */}
           <label className="tb-color-wrap" title="Stroke color">

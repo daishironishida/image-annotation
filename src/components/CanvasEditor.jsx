@@ -12,6 +12,7 @@ export default function CanvasEditor({ file, onClose }) {
   const [strokeWidth, setStrokeWidth] = useState(2)
   const [fontSize, setFontSize] = useState(20)
   const [isTextSelected, setIsTextSelected] = useState(false)
+  const [isObjectSelected, setIsObjectSelected] = useState(false)
   const [pageNum, setPageNum] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
 
@@ -34,7 +35,9 @@ export default function CanvasEditor({ file, onClose }) {
       setStrokeWidth(strokeWidth)
       setFontSize(fontSize)
       setIsTextSelected(!!isText)
+      setIsObjectSelected(true)
     },
+    onSelectionCleared: () => setIsObjectSelected(false),
   })
 
   function handlePageChange(updater) {
@@ -56,6 +59,7 @@ export default function CanvasEditor({ file, onClose }) {
         strokeWidth={strokeWidth} onStrokeWidthChange={setStrokeWidth}
         fontSize={fontSize} onFontSizeChange={setFontSize}
         isTextSelected={isTextSelected}
+        isObjectSelected={isObjectSelected}
         onUndo={undo} onRedo={redo} canUndo={canUndo} canRedo={canRedo}
         onDownload={() => download(downloadName)}
         onClose={onClose}

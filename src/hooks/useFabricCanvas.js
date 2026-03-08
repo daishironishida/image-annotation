@@ -15,6 +15,7 @@ export default function useFabricCanvas({
   fontSize,
   onToolChange,
   onSelectionStyle,
+  onSelectionCleared,
 }) {
   const fabricRef = useRef(null)
   const drawRef = useRef({ isDrawing: false, startX: 0, startY: 0, shape: null })
@@ -187,6 +188,7 @@ export default function useFabricCanvas({
     }
     canvas.on('selection:created', syncSelection)
     canvas.on('selection:updated', syncSelection)
+    canvas.on('selection:cleared', () => onSelectionCleared?.())
 
     return () => {
       canvas.dispose()
