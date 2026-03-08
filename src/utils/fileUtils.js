@@ -25,7 +25,8 @@ export async function renderPdfPage(file, pageNum) {
   const pdf = await lib.getDocument({ data: arrayBuffer }).promise
   const page = await pdf.getPage(pageNum)
 
-  const viewport = page.getViewport({ scale: 2 })
+  const dpr = window.devicePixelRatio || 1
+  const viewport = page.getViewport({ scale: 2 * dpr })
   const offscreen = document.createElement('canvas')
   offscreen.width = viewport.width
   offscreen.height = viewport.height
@@ -34,7 +35,7 @@ export async function renderPdfPage(file, pageNum) {
   return {
     dataUrl: offscreen.toDataURL('image/png'),
     totalPages: pdf.numPages,
-    width: viewport.width,
-    height: viewport.height,
+    width: viewport.width / dpr,
+    height: viewport.height / dpr,
   }
 }

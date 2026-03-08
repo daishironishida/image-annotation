@@ -124,7 +124,7 @@ export default function useFabricCanvas({
     if (fabricRef.current) return
     const canvas = new Canvas(canvasEl.current, {
       selection: true,
-      enableRetinaScaling: false,
+      enableRetinaScaling: true,
       uniformScaling: false,
     })
     fabricRef.current = canvas
