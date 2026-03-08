@@ -24,6 +24,7 @@ export default function useFabricCanvas({
   const historyStack = useRef([])
   const historyIdx = useRef(-1)
   const isRestoring = useRef(false)
+  const saveDebounceRef = useRef(null)
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
 
@@ -64,7 +65,8 @@ export default function useFabricCanvas({
       obj.setCoords()
     }
     canvas.renderAll()
-    saveState()
+    clearTimeout(saveDebounceRef.current)
+    saveDebounceRef.current = setTimeout(saveState, 400)
   }, [strokeColor, fillColor, fillEnabled, strokeWidth, fontSize]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── History helpers ─────────────────────────────────────────────────────────
@@ -99,6 +101,7 @@ export default function useFabricCanvas({
   }, [])
 
   const undo = useCallback(async () => {
+    clearTimeout(saveDebounceRef.current)
     if (historyIdx.current <= 0) return
     historyIdx.current--
     await restoreState(historyIdx.current)
@@ -107,6 +110,7 @@ export default function useFabricCanvas({
   }, [restoreState])
 
   const redo = useCallback(async () => {
+    clearTimeout(saveDebounceRef.current)
     if (historyIdx.current >= historyStack.current.length - 1) return
     historyIdx.current++
     await restoreState(historyIdx.current)
