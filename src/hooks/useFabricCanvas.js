@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { Canvas, Rect, Ellipse, Line, Textbox } from 'fabric'
-import { readFileAsDataURL, renderPdfPage } from '../utils/fileUtils'
+import { readFileAsDataURL, renderPdfPage, renderAllPdfPagesForExport } from '../utils/fileUtils'
 
 export default function useFabricCanvas({
   canvasEl,
@@ -16,6 +16,7 @@ export default function useFabricCanvas({
   onToolChange,
   onSelectionStyle,
   onSelectionCleared,
+  canvasAreaRef,
 }) {
   const fabricRef = useRef(null)
   const drawRef = useRef({ isDrawing: false, startX: 0, startY: 0, shape: null })
@@ -28,6 +29,32 @@ export default function useFabricCanvas({
   const saveDebounceRef = useRef(null)
   const [canUndo, setCanUndo] = useState(false)
   const [canRedo, setCanRedo] = useState(false)
+  const [zoom, setZoomState] = useState(1)
+  const zoomRef = useRef(1)
+  const pendingScrollRef = useRef(null)
+  // Per-page annotation state for PDFs
+  const fileRef = useRef(null)
+  const totalPagesRef = useRef(1)
+  const currentPageRef = useRef(1)
+  const pageStatesRef = useRef({})
+  const prevFileRef = useRef(null)
+
+  // Apply zoom: resize canvas, optionally scroll to keep viewport center stable
+  const applyZoom = useCallback((newZoom) => {
+    newZoom = Math.max(0.1, Math.min(4, newZoom))
+    const area = canvasAreaRef?.current
+    const oldZoom = zoomRef.current
+    if (area) {
+      const scale = newZoom / oldZoom
+      const cx = area.scrollLeft + area.clientWidth / 2
+      const cy = area.scrollTop + area.clientHeight / 2
+      pendingScrollRef.current = {
+        left: cx * scale - area.clientWidth / 2,
+        top: cy * scale - area.clientHeight / 2,
+      }
+    }
+    setZoomState(newZoom)
+  }, [canvasAreaRef])
 
   // Keep tool opts ref in sync
   useEffect(() => {
@@ -134,7 +161,30 @@ export default function useFabricCanvas({
     canvas.on('before:render', (e) => {
       const { img, w, h } = bgRef.current
       if (!img) return
-      e.ctx.drawImage(img, 0, 0, w, h)
+      e.ctx.drawImage(img, 0, 0, w * zoomRef.current, h * zoomRef.current)
+    })
+
+    // Mouse wheel: Ctrl/Cmd+scroll zooms, plain scroll falls through to container
+    canvas.on('mouse:wheel', (opt) => {
+      const e = opt.e
+      if (!e.ctrlKey && !e.metaKey) return
+      e.preventDefault()
+      e.stopPropagation()
+      const oldZoom = zoomRef.current
+      let newZoom = oldZoom * Math.pow(0.999, e.deltaY)
+      newZoom = Math.max(0.1, Math.min(4, newZoom))
+      const area = canvasAreaRef?.current
+      if (area) {
+        const rect = area.getBoundingClientRect()
+        const mouseX = e.clientX - rect.left + area.scrollLeft
+        const mouseY = e.clientY - rect.top + area.scrollTop
+        const scale = newZoom / oldZoom
+        pendingScrollRef.current = {
+          left: mouseX * scale - (e.clientX - rect.left),
+          top: mouseY * scale - (e.clientY - rect.top),
+        }
+      }
+      setZoomState(newZoom)
     })
 
     canvas.on('object:modified', saveState)
@@ -196,12 +246,44 @@ export default function useFabricCanvas({
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Zoom ─────────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    const canvas = fabricRef.current
+    const { w, h } = bgRef.current
+    if (!canvas || !w) return
+    zoomRef.current = zoom
+    canvas.setZoom(zoom)
+    canvas.setDimensions({ width: w * zoom, height: h * zoom })
+    canvas.renderAll()
+    if (pendingScrollRef.current && canvasAreaRef?.current) {
+      const { left, top } = pendingScrollRef.current
+      pendingScrollRef.current = null
+      canvasAreaRef.current.scrollLeft = left
+      canvasAreaRef.current.scrollTop = top
+    }
+  }, [zoom]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Load file ───────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!fabricRef.current || !file) return
     const canvas = fabricRef.current
 
     async function load() {
+      const isNewFile = file !== prevFileRef.current
+      if (isNewFile) {
+        // New file: reset all per-page state
+        pageStatesRef.current = {}
+        prevFileRef.current = file
+        fileRef.current = file
+      } else {
+        // Page navigation within same PDF: save current page annotations
+        const objects = canvas.getObjects()
+        if (objects.length > 0) {
+          pageStatesRef.current[currentPageRef.current] = canvas.toJSON()
+        }
+      }
+      currentPageRef.current = pageNum
+
       // Clear annotations and history
       canvas.clear()
       bgRef.current = { img: null, w: 0, h: 0 }
@@ -218,6 +300,7 @@ export default function useFabricCanvas({
         naturalW = result.width
         naturalH = result.height
         totalPages = result.totalPages
+        totalPagesRef.current = totalPages
       } else {
         dataUrl = await readFileAsDataURL(file)
         await new Promise(resolve => {
@@ -245,9 +328,32 @@ export default function useFabricCanvas({
       })
 
       bgRef.current = { img, w, h }
+      // Reset zoom to 1 for new file/page
+      zoomRef.current = 1
+      pendingScrollRef.current = null
+      canvas.setZoom(1)
       canvas.setDimensions({ width: w, height: h })
+      if (canvasAreaRef?.current) {
+        canvasAreaRef.current.scrollLeft = 0
+        canvasAreaRef.current.scrollTop = 0
+      }
+      // Restore saved annotations for this page if returning to it
+      const savedState = pageStatesRef.current[pageNum]
+      if (savedState) {
+        isRestoring.current = true
+        await canvas.loadFromJSON(savedState)
+        const isSelect = toolOptsRef.current.activeTool === 'select'
+        canvas.getObjects().forEach(obj => {
+          obj.selectable = isSelect
+          obj.evented = isSelect
+          if (obj.type === 'textbox') obj.setControlsVisibility({ mt: false, mb: false })
+        })
+        canvas.selection = isSelect
+        isRestoring.current = false
+      }
       canvas.renderAll()
       saveState()
+      setZoomState(1)
     }
 
     load()
@@ -401,6 +507,12 @@ export default function useFabricCanvas({
         e.preventDefault(); undo()
       } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'z') {
         e.preventDefault(); redo()
+      } else if ((e.metaKey || e.ctrlKey) && (e.key === '=' || e.key === '+')) {
+        e.preventDefault(); applyZoom(Math.min(4, zoomRef.current * 1.25))
+      } else if ((e.metaKey || e.ctrlKey) && e.key === '-') {
+        e.preventDefault(); applyZoom(Math.max(0.1, zoomRef.current / 1.25))
+      } else if ((e.metaKey || e.ctrlKey) && e.key === '0') {
+        e.preventDefault(); applyZoom(1)
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
         const active = canvas.getActiveObject()
         if (active && !active.isEditing) {
@@ -417,18 +529,98 @@ export default function useFabricCanvas({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [undo, redo, saveState])
+  }, [undo, redo, saveState, applyZoom])
 
   // ── Download ────────────────────────────────────────────────────────────────
-  const download = useCallback((filename = 'annotated.png') => {
+  const download = useCallback(async (filename = 'annotated.png') => {
     const canvas = fabricRef.current
     if (!canvas) return
-    const dataUrl = canvas.toDataURL({ format: 'png', multiplier: 1 })
-    const a = document.createElement('a')
-    a.href = dataUrl
-    a.download = filename
-    a.click()
+    const file = fileRef.current
+    const { w, h } = bgRef.current
+
+    // ── Image files ──────────────────────────────────────────────────────────
+    if (!file || file.type !== 'application/pdf') {
+      const format = file?.type === 'image/jpeg' ? 'jpeg' : 'png'
+      const savedZoom = zoomRef.current
+      if (savedZoom !== 1) {
+        canvas.setZoom(1)
+        canvas.setDimensions({ width: w, height: h })
+      }
+      const dataUrl = canvas.toDataURL({ format, multiplier: 1 })
+      if (savedZoom !== 1) {
+        canvas.setZoom(savedZoom)
+        canvas.setDimensions({ width: w * savedZoom, height: h * savedZoom })
+        canvas.renderAll()
+      }
+      const a = document.createElement('a')
+      a.href = dataUrl
+      a.download = filename
+      a.click()
+      return
+    }
+
+    // ── PDF files: composite each page then save as PDF ──────────────────────
+    // Save current page's annotations before iterating
+    pageStatesRef.current[currentPageRef.current] = canvas.toJSON()
+
+    const [{ jsPDF }, pageResults] = await Promise.all([
+      import('jspdf'),
+      renderAllPdfPagesForExport(file),
+    ])
+
+    // Composite each page (background + annotations) in parallel
+    // renderPageForExport now returns a canvas directly — no PNG encode/decode round-trip
+    const composites = await Promise.all(pageResults.map(async (pageResult, i) => {
+      const p = i + 1
+      const { canvas: bgCanvas, width: pgW, height: pgH } = pageResult
+
+      // If no annotations, use the rendered canvas directly
+      const pageState = pageStatesRef.current[p]
+      if (!pageState?.objects?.length) {
+        return { dataUrl: bgCanvas.toDataURL('image/jpeg', 0.92), pgW, pgH }
+      }
+
+      // Composite: draw PDF background then annotation layer
+      const offscreen = document.createElement('canvas')
+      offscreen.width = pgW
+      offscreen.height = pgH
+      const ctx = offscreen.getContext('2d')
+      ctx.drawImage(bgCanvas, 0, 0)
+
+      const tempEl = document.createElement('canvas')
+      tempEl.width = pgW
+      tempEl.height = pgH
+      const tempFabric = new Canvas(tempEl, { enableRetinaScaling: false })
+      await tempFabric.loadFromJSON(pageState)
+      ctx.drawImage(tempEl, 0, 0)
+      tempFabric.dispose()
+
+      return { dataUrl: offscreen.toDataURL('image/jpeg', 0.92), pgW, pgH }
+    }))
+
+    const pxToPt = 72 / 96
+    let pdf = null
+    for (const { dataUrl, pgW, pgH } of composites) {
+      if (!pdf) {
+        pdf = new jsPDF({
+          orientation: pgW >= pgH ? 'landscape' : 'portrait',
+          unit: 'pt',
+          format: [pgW * pxToPt, pgH * pxToPt],
+        })
+      } else {
+        pdf.addPage([pgW * pxToPt, pgH * pxToPt], pgW >= pgH ? 'landscape' : 'portrait')
+      }
+      pdf.addImage(dataUrl, 'JPEG', 0, 0, pgW * pxToPt, pgH * pxToPt)
+    }
+
+    pdf.save(filename)
   }, [])
 
-  return { undo, redo, canUndo, canRedo, download }
+  return {
+    undo, redo, canUndo, canRedo, download,
+    zoom,
+    zoomIn:    () => applyZoom(Math.min(4,   zoomRef.current * 1.25)),
+    zoomOut:   () => applyZoom(Math.max(0.1, zoomRef.current / 1.25)),
+    resetZoom: () => applyZoom(1),
+  }
 }

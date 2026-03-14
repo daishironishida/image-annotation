@@ -4,6 +4,7 @@ import useFabricCanvas from '../hooks/useFabricCanvas'
 
 export default function CanvasEditor({ file, onClose }) {
   const canvasEl = useRef(null)
+  const canvasAreaRef = useRef(null)
 
   const [activeTool, setActiveTool] = useState('select')
   const [strokeColor, setStrokeColor] = useState('#ff3b30')
@@ -16,7 +17,7 @@ export default function CanvasEditor({ file, onClose }) {
   const [pageNum, setPageNum] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
 
-  const { undo, redo, canUndo, canRedo, download } = useFabricCanvas({
+  const { undo, redo, canUndo, canRedo, download, zoom, zoomIn, zoomOut, resetZoom } = useFabricCanvas({
     canvasEl,
     file,
     activeTool,
@@ -38,6 +39,7 @@ export default function CanvasEditor({ file, onClose }) {
       setIsObjectSelected(true)
     },
     onSelectionCleared: () => setIsObjectSelected(false),
+    canvasAreaRef,
   })
 
   function handlePageChange(updater) {
@@ -47,7 +49,13 @@ export default function CanvasEditor({ file, onClose }) {
     })
   }
 
-  const downloadName = file ? file.name.replace(/\.[^.]+$/, '') + '.png' : 'annotated.png'
+  function downloadExt() {
+    if (!file) return '.png'
+    if (file.type === 'application/pdf') return '.pdf'
+    if (file.type === 'image/jpeg') return '.jpg'
+    return '.png'
+  }
+  const downloadName = file ? file.name.replace(/\.[^.]+$/, '') + downloadExt() : 'annotated.png'
 
   return (
     <div className="editor">
@@ -64,8 +72,9 @@ export default function CanvasEditor({ file, onClose }) {
         onDownload={() => download(downloadName)}
         onClose={onClose}
         pageNum={pageNum} totalPages={totalPages} onPageChange={handlePageChange}
+        zoom={zoom} onZoomIn={zoomIn} onZoomOut={zoomOut} onResetZoom={resetZoom}
       />
-      <div className="canvas-area">
+      <div className="canvas-area" ref={canvasAreaRef}>
         <div className="canvas-wrap">
           <canvas ref={canvasEl} />
         </div>
@@ -82,9 +91,6 @@ export default function CanvasEditor({ file, onClose }) {
           flex: 1;
           overflow: auto;
           background: #d0d0d0;
-          display: flex;
-          align-items: flex-start;
-          justify-content: center;
           padding: 24px;
         }
         .canvas-wrap {
@@ -92,7 +98,7 @@ export default function CanvasEditor({ file, onClose }) {
           border-radius: 2px;
           overflow: hidden;
           line-height: 0;
-          flex-shrink: 0;
+          margin: 0 auto;
         }
       `}</style>
     </div>

@@ -57,6 +57,7 @@ export default function Toolbar({
   onUndo, onRedo, canUndo, canRedo,
   onDownload, onClose,
   pageNum, totalPages, onPageChange,
+  zoom, onZoomIn, onZoomOut, onResetZoom,
 }) {
   const [fontSizeInput, setFontSizeInput] = useState(String(fontSize))
 
@@ -221,6 +222,30 @@ export default function Toolbar({
 
       <div className="tb-sep" />
 
+      {/* Zoom */}
+      <div className="tb-group">
+        <button className="tb-btn" onClick={onZoomOut} disabled={zoom <= 0.1} title="Zoom out (⌘−)">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.6"/>
+            <line x1="5" y1="7" x2="9" y2="7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+            <line x1="11" y1="11" x2="14" y2="14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+          </svg>
+        </button>
+        <button className="tb-btn tb-zoom-pct" onClick={onResetZoom} title="Reset zoom (⌘0)">
+          {Math.round((zoom ?? 1) * 100)}%
+        </button>
+        <button className="tb-btn" onClick={onZoomIn} disabled={zoom >= 4} title="Zoom in (⌘+)">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.6"/>
+            <line x1="7" y1="5" x2="7" y2="9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+            <line x1="5" y1="7" x2="9" y2="7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+            <line x1="11" y1="11" x2="14" y2="14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <div className="tb-sep" />
+
       {/* Download */}
       <button className="tb-btn tb-download" onClick={onDownload} title="Download as PNG">
         <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
@@ -340,6 +365,7 @@ export default function Toolbar({
 
         .tb-pages { gap: 4px; }
         .tb-page-info { color: #aaa; font-size: 12px; min-width: 48px; text-align: center; }
+        .tb-zoom-pct { color: #aaa; font-size: 12px; min-width: 42px; justify-content: center; font-variant-numeric: tabular-nums; }
       `}</style>
     </div>
   )
