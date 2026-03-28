@@ -56,7 +56,7 @@ export default function FileUpload({ onFile }) {
           </svg>
         </div>
 
-        <h1 className="upload-title">Drop a file to annotate</h1>
+        <h1 className="upload-title">Drop a file to edit</h1>
         <p className="upload-sub">or{' '}
           <button className="upload-browse" onClick={() => inputRef.current.click()}>
             browse your files
